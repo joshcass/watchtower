@@ -332,6 +332,35 @@ describe("watchtower view", function()
     assert.are.equal(state.diff_buf, vim.api.nvim_win_get_buf(state.diff_win))
   end)
 
+  it("returns to an existing [No Name] buffer instead of piling up new ones", function()
+    local function unnamed_bufs()
+      return vim.tbl_filter(function(info)
+        return info.name == ""
+      end, vim.fn.getbufinfo({ buflisted = 1 }))
+    end
+    local function split_diff()
+      vim.api.nvim_set_current_win(state.diff_win)
+      vim.cmd("split")
+      local win = vim.api.nvim_get_current_win()
+      wait_for(function()
+        return vim.api.nvim_win_get_buf(win) ~= state.diff_buf
+      end, "split to get its own buffer")
+      return vim.api.nvim_win_get_buf(win)
+    end
+
+    local first = split_diff()
+    local second = split_diff()
+    assert.are.equal(first, second)
+    assert.are.equal(1, #unnamed_bufs())
+
+    -- Scratch text typed into it is still returned to
+    vim.api.nvim_buf_set_lines(first, 0, -1, false, { "scratch notes" })
+    local third = split_diff()
+    assert.are.equal(first, third)
+    assert.are.same({ "scratch notes" }, vim.api.nvim_buf_get_lines(third, 0, -1, false))
+    assert.are.equal(1, #unnamed_bufs())
+  end)
+
   it("gives windows split off the diff or tree an empty buffer when no files are open", function()
     vim.api.nvim_set_current_win(state.diff_win)
     vim.cmd("split")

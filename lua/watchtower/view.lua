@@ -121,6 +121,24 @@ function M.recent_file_buf()
   return best and best.bufnr
 end
 
+---The most recently used [No Name] buffer, empty or not, so repeated splits return to it
+---instead of piling up new ones.
+---@return integer|nil
+function M.scratch_buf()
+  local best
+  for _, info in ipairs(vim.fn.getbufinfo({ buflisted = 1 })) do
+    local buf = info.bufnr
+    if
+      info.name == ""
+      and vim.bo[buf].buftype == ""
+      and (not best or info.lastused > best.lastused or (info.lastused == best.lastused and buf > best.bufnr))
+    then
+      best = info
+    end
+  end
+  return best and best.bufnr
+end
+
 local function ensure_diff_win()
   if state.win_valid(state.diff_win) and vim.api.nvim_win_get_tabpage(state.diff_win) == state.tab then
     if vim.api.nvim_win_get_buf(state.diff_win) ~= state.diff_buf then
@@ -481,7 +499,7 @@ local function set_autocmds()
     end,
   })
   -- :split / <C-w>v from the tree or diff would show a second copy of that view buffer;
-  -- show the most recently used file instead, or an empty buffer when there is none
+  -- show the most recently used file instead, else an existing [No Name] buffer, else a new one
   vim.api.nvim_create_autocmd("WinNew", {
     group = augroup,
     callback = function()
@@ -493,9 +511,9 @@ local function set_autocmds()
         end
         local buf = vim.api.nvim_win_get_buf(win)
         if buf == state.diff_buf or buf == state.tree_buf then
-          local recent = M.recent_file_buf()
-          if recent then
-            vim.api.nvim_win_set_buf(win, recent)
+          local reuse = M.recent_file_buf() or M.scratch_buf()
+          if reuse then
+            vim.api.nvim_win_set_buf(win, reuse)
           else
             vim.api.nvim_win_call(win, function()
               vim.cmd("enew")

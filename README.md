@@ -102,7 +102,7 @@ The palette switches with `background`. Groups you can override with `highlights
 | `WatchtowerDiffContext` | Normal fg blended 35% toward its bg | same |
 | `WatchtowerDiffGutter` | Normal fg blended halfway to its bg (unchanged lines) | same |
 
-Splitting a window off the tree or diff (`:split`, `<C-w>v`) shows the most recently used file in the new window instead of a second copy of the view, or an empty buffer when no files are open.
+Splitting a window off the tree or diff (`:split`, `<C-w>v`) shows the most recently used file in the new window instead of a second copy of the view. With no files open it returns to the most recent `[No Name]` buffer (even one you've typed in), and creates one only when none exists.
 
 ### Opening automatically
 
