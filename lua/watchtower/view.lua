@@ -153,7 +153,13 @@ function M.select(file)
     elseif #lines == 0 then
       diff.render(file, nil, "No differences from " .. config.options.base)
     else
-      diff.render(file, lines)
+      -- The whole file is parsed for syntax so partial hunks highlight like a normal buffer
+      local new_text
+      if file.status ~= "D" then
+        local ok, contents = pcall(vim.fn.readfile, state.abs_path(file), "b")
+        new_text = ok and table.concat(contents, "\n") or nil
+      end
+      diff.render(file, lines, nil, { path = state.abs_path(file), new = new_text })
     end
     bridge.notify()
   end)
@@ -456,6 +462,26 @@ local function set_autocmds()
     group = augroup,
     callback = function()
       vim.schedule(M.pin_layout)
+    end,
+  })
+  -- :split / <C-w>v from the tree or diff would show a second copy of that view buffer;
+  -- give the new window an empty buffer instead
+  vim.api.nvim_create_autocmd("WinNew", {
+    group = augroup,
+    callback = function()
+      local win = vim.api.nvim_get_current_win()
+      -- Scheduled: the view's own splits swap in their real buffer right after splitting
+      vim.schedule(function()
+        if not state.is_open() or not state.win_valid(win) or win == state.diff_win or win == state.tree_win then
+          return
+        end
+        local buf = vim.api.nvim_win_get_buf(win)
+        if buf == state.diff_buf or buf == state.tree_buf then
+          vim.api.nvim_win_call(win, function()
+            vim.cmd("enew")
+          end)
+        end
+      end)
     end,
   })
 end

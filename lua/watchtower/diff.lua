@@ -1,5 +1,7 @@
 local config = require("watchtower.config")
 local state = require("watchtower.state")
+local words = require("watchtower.words")
+local syntax = require("watchtower.syntax")
 
 local M = {}
 
@@ -14,6 +16,25 @@ local kind_hl = {
   hunk = "WatchtowerDiffHunk",
   meta = "Comment",
 }
+
+local sign_hl = {
+  add = "WatchtowerDiffAddSign",
+  del = "WatchtowerDiffDeleteSign",
+}
+
+local word_hl = {
+  add = "WatchtowerDiffAddWord",
+  del = "WatchtowerDiffDeleteWord",
+}
+
+---Line number shown in the gutter: the old file's line for removals, the new file's otherwise.
+local function gutter_number(info)
+  if info.kind == "del" then
+    return info.old
+  elseif info.kind == "add" or info.kind == "ctx" then
+    return info.new
+  end
+end
 
 ---@return WatchtowerDiffLine|nil
 function M.line_info(lnum)
@@ -32,7 +53,8 @@ end
 ---@param file WatchtowerFile|nil
 ---@param lines WatchtowerDiffLine[]|nil
 ---@param message string|nil shown instead of the diff
-function M.render(file, lines, message)
+---@param sources? { path: string, new: string|nil } full new file contents for syntax highlighting
+function M.render(file, lines, message, sources)
   local buf = state.diff_buf
   if not buf or not vim.api.nvim_buf_is_valid(buf) then
     return
@@ -40,6 +62,7 @@ function M.render(file, lines, message)
   local same_file = state.selected and file and vim.b[buf].watchtower_path == file.path
 
   state.diff_lines = lines or {}
+  words.annotate(state.diff_lines)
   vim.b[buf].watchtower_path = file and file.path or nil
 
   local text = {}
@@ -68,10 +91,63 @@ function M.render(file, lines, message)
   if message then
     vim.api.nvim_buf_set_extmark(buf, ns, 1, 0, { line_hl_group = "Comment" })
   end
+  local gutter_width = 0
+  for _, info in ipairs(state.diff_lines) do
+    local n = gutter_number(info)
+    gutter_width = math.max(gutter_width, n and #tostring(n) or 0)
+  end
+
+  local new_spans = sources and sources.new and syntax.spans(sources.path, sources.new)
+
+  local first_row = M.HEADER_LINES + (message and 1 or 0)
   for i, info in ipairs(state.diff_lines) do
+    local row = first_row + i - 1
     local hl = kind_hl[info.kind]
     if hl then
-      vim.api.nvim_buf_set_extmark(buf, ns, i - 1 + M.HEADER_LINES, 0, { line_hl_group = hl })
+      vim.api.nvim_buf_set_extmark(buf, ns, row, 0, { line_hl_group = hl })
+    end
+    if sign_hl[info.kind] then
+      vim.api.nvim_buf_set_extmark(buf, ns, row, 0, { end_col = 1, hl_group = sign_hl[info.kind] })
+    end
+
+    -- Only added lines keep syntax colors. Removed lines are drawn in one flat color, and
+    -- unchanged lines are faded unless diff.context = "syntax", so the additions stand out.
+    local spans, text_hl
+    if info.kind == "del" then
+      text_hl = "WatchtowerDiffDeleteText"
+    elseif info.kind == "ctx" and config.options.diff.context ~= "syntax" then
+      text_hl = "WatchtowerDiffContext"
+    elseif info.kind == "add" or info.kind == "ctx" then
+      spans = new_spans and new_spans[info.new]
+    end
+    local text_len = #info.text
+    if text_hl and text_len > 1 then
+      vim.api.nvim_buf_set_extmark(buf, ns, row, 1, { end_col = text_len, hl_group = text_hl })
+    end
+    for _, span in ipairs(spans or {}) do
+      -- +1 skips the +/-/space marker; clamp in case the file changed after the diff was taken
+      local s, e = span[1] + 1, math.min(span[2] + 1, text_len)
+      if e > s then
+        vim.api.nvim_buf_set_extmark(buf, ns, row, s, { end_col = e, hl_group = span[3], priority = span[4] })
+      end
+    end
+    for _, range in ipairs(info.words or {}) do
+      vim.api.nvim_buf_set_extmark(buf, ns, row, range[1], {
+        end_col = range[2],
+        hl_group = word_hl[info.kind],
+        -- Above the line highlight so the stronger word background wins
+        priority = 5000,
+      })
+    end
+    if gutter_width > 0 then
+      local n = gutter_number(info)
+      local label = string.rep(" ", gutter_width - #tostring(n or "")) .. (n and tostring(n) or "") .. " "
+      -- Inline virtual text keeps buffer columns unchanged, so cursor/selection mapping still works
+      vim.api.nvim_buf_set_extmark(buf, ns, row, 0, {
+        -- Changed lines number in their sign color; unchanged lines get the dimmed gutter
+        virt_text = { { label, { sign_hl[info.kind] or "WatchtowerDiffGutter", hl } } },
+        virt_text_pos = "inline",
+      })
     end
   end
 

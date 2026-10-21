@@ -62,6 +62,8 @@ Defaults:
   },
   watch = { enabled = true, interval_ms = 1000 },
   claudecode = true,
+  diff = { context = "dim" }, -- unchanged lines: "dim" | "syntax"
+  highlights = {},       -- overrides, e.g. { WatchtowerDiffAdd = { bg = "#c7e1cb" } }
   keymaps = {
     tree = { select = "<CR>", open_file = "o", focus_diff = "l", collapse = "h", refresh = "R", close = "q" },
     diff = {
@@ -76,6 +78,31 @@ Defaults:
 ```
 
 Set any keymap to `false` to disable it.
+
+### Diff colors
+
+The diff pane follows Claude Code's syntax-highlighted diff view:
+- Added and removed lines get a soft full-line background.
+- Added lines keep the code's treesitter syntax colors, from parsing the whole file on disk so partial hunks highlight like a normal buffer. Removed lines are drawn in one flat dark grey.
+- Unchanged lines are faded toward the background (`diff.context = "dim"`); set `diff.context = "syntax"` to keep their code colors instead.
+- When a removed line is replaced by an added line, the changed words get a stronger background (skipped when most of the line changed).
+- A gutter shows each line's number: the old file's for removals, the new file's otherwise. On changed lines the number and the `+`/`-` marker use the sign color; on unchanged lines the gutter is dimmed.
+
+The palette switches with `background`. Groups you can override with `highlights`:
+
+| Group | Light | Dark |
+| --- | --- | --- |
+| `WatchtowerDiffAdd` | `#dcffdc` bg | `#022800` bg |
+| `WatchtowerDiffDelete` | `#ffdcdc` bg | `#3d0100` bg |
+| `WatchtowerDiffAddWord` | `#b2ffb2` bg | `#044700` bg |
+| `WatchtowerDiffDeleteWord` | `#ffc7c7` bg | `#5c0200` bg |
+| `WatchtowerDiffAddSign` | `#248a3d` fg (marker + line number) | `#50c850` fg |
+| `WatchtowerDiffDeleteSign` | `#cf222e` fg (marker + line number) | `#dc5a5a` fg |
+| `WatchtowerDiffDeleteText` | `#333333` fg | `#f8f8f2` fg |
+| `WatchtowerDiffContext` | Normal fg blended 35% toward its bg | same |
+| `WatchtowerDiffGutter` | Normal fg blended halfway to its bg (unchanged lines) | same |
+
+Splitting a window off the tree or diff (`:split`, `<C-w>v`) gives the new window an empty buffer instead of a second copy of the view.
 
 ### Opening automatically
 

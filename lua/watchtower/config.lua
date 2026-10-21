@@ -35,6 +35,14 @@ M.defaults = {
     -- How often git status is polled while the view is open
     interval_ms = 1000,
   },
+  diff = {
+    -- Unchanged lines: "dim" fades them toward the background, "syntax" keeps their code colors
+    context = "dim",
+  },
+  -- Highlight overrides applied after the built-in ones, e.g.
+  -- { WatchtowerDiffAdd = { bg = "#c7e1cb" }, WatchtowerDiffDeleteWord = { bg = "#b3001f", fg = "#ffffff" } }
+  ---@type table<string, vim.api.keyset.highlight>
+  highlights = {},
   -- Report the tree/diff cursor to claudecode.nvim as the real file + line
   claudecode = true,
   keymaps = {

@@ -2,6 +2,24 @@ local config = require("watchtower.config")
 
 local M = {}
 
+---Normal's foreground blended towards its background by `amount` (0..1).
+local function dimmed_fg(amount)
+  local normal = vim.api.nvim_get_hl(0, { name = "Normal", link = false })
+  if not normal.fg or not normal.bg then
+    return vim.o.background == "light" and "#999999" or "#777777"
+  end
+  local function channel(color, shift)
+    return math.floor(color / 2 ^ shift) % 256
+  end
+  local out = 0
+  for _, shift in ipairs({ 16, 8, 0 }) do
+    local fg, bg = channel(normal.fg, shift), channel(normal.bg, shift)
+    local mixed = math.floor(fg + (bg - fg) * amount + 0.5)
+    out = out + mixed * 2 ^ shift
+  end
+  return string.format("#%06x", out)
+end
+
 local function set_highlights()
   local links = {
     WatchtowerAdded = "Added",
@@ -11,12 +29,45 @@ local function set_highlights()
     WatchtowerConflict = "DiagnosticError",
     WatchtowerDir = "Directory",
     WatchtowerHeader = "Title",
-    WatchtowerDiffAdd = "DiffAdd",
-    WatchtowerDiffDelete = "DiffDelete",
     WatchtowerDiffHunk = "Special",
   }
   for group, link in pairs(links) do
     vim.api.nvim_set_hl(0, group, { link = link, default = true })
+  end
+
+  -- Colorschemes' DiffAdd/DiffDelete are tuned for side-by-side diffs and are hard to read as
+  -- full-line highlights. These are the colors of Claude Code's syntax-highlighted diff view: a
+  -- soft line background under the code's normal syntax colors, and a stronger background on
+  -- the words that changed.
+  local light = vim.o.background == "light"
+  local diff_colors = light
+      and {
+        WatchtowerDiffAdd = { bg = "#dcffdc" },
+        WatchtowerDiffDelete = { bg = "#ffdcdc" },
+        WatchtowerDiffAddWord = { bg = "#b2ffb2" },
+        WatchtowerDiffDeleteWord = { bg = "#ffc7c7" },
+        WatchtowerDiffAddSign = { fg = "#248a3d" },
+        WatchtowerDiffDeleteSign = { fg = "#cf222e" },
+        WatchtowerDiffDeleteText = { fg = "#333333" },
+      }
+    or {
+      WatchtowerDiffAdd = { bg = "#022800" },
+      WatchtowerDiffDelete = { bg = "#3d0100" },
+      WatchtowerDiffAddWord = { bg = "#044700" },
+      WatchtowerDiffDeleteWord = { bg = "#5c0200" },
+      WatchtowerDiffAddSign = { fg = "#50c850" },
+      WatchtowerDiffDeleteSign = { fg = "#dc5a5a" },
+      WatchtowerDiffDeleteText = { fg = "#f8f8f2" },
+    }
+  -- Gutter of unchanged lines; changed lines use the sign colors for their line numbers
+  diff_colors.WatchtowerDiffGutter = { fg = dimmed_fg(0.5) }
+  diff_colors.WatchtowerDiffContext = { fg = dimmed_fg(0.35) }
+  for group, spec in pairs(diff_colors) do
+    vim.api.nvim_set_hl(0, group, spec)
+  end
+
+  for group, spec in pairs(config.options.highlights) do
+    vim.api.nvim_set_hl(0, group, spec)
   end
 end
 
@@ -104,6 +155,7 @@ function M.setup(opts)
 
   local group = vim.api.nvim_create_augroup("WatchtowerSetup", { clear = true })
   vim.api.nvim_create_autocmd("ColorScheme", { group = group, callback = set_highlights })
+  vim.api.nvim_create_autocmd("OptionSet", { group = group, pattern = "background", callback = set_highlights })
 
   if config.options.open_on_file then
     setup_open_on_file(group)

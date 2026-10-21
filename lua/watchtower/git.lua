@@ -103,6 +103,7 @@ end
 ---@field kind "hunk"|"add"|"del"|"ctx"|"meta"
 ---@field new integer Line in the working tree file this diff line corresponds to
 ---@field old integer|nil
+---@field words { [1]: integer, [2]: integer }[]|nil changed byte ranges, set by watchtower.words
 
 ---Parses unified diff output into display lines, each mapped to a line in the new file.
 ---File headers (diff --git, index, ---, +++) are dropped.

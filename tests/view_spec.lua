@@ -176,6 +176,161 @@ describe("watchtower view", function()
     assert.are.equal(35, vim.api.nvim_win_get_width(state.tree_win))
   end)
 
+  it("highlights changed words, syntax and shows file line numbers", function()
+    move_tree_to("lib/deep/kept.lua")
+    local ns = vim.api.nvim_get_namespaces().watchtower_diff
+    local marks = vim.api.nvim_buf_get_extmarks(state.diff_buf, ns, 0, -1, { details = true })
+    local rows = diff_lines()
+    local del_row = vim.fn.index(rows, "-line 20")
+    local add_row = vim.fn.index(rows, "+line 20 edited")
+    local ctx_row = vim.fn.index(rows, " line 19")
+
+    local by_row = {}
+    for _, m in ipairs(marks) do
+      by_row[m[2]] = by_row[m[2]] or {}
+      table.insert(by_row[m[2]], m)
+    end
+    local function find(row, pred)
+      for _, m in ipairs(by_row[row] or {}) do
+        if pred(m[4]) then
+          return m
+        end
+      end
+    end
+
+    local word = find(add_row, function(d)
+      return d.hl_group == "WatchtowerDiffAddWord"
+    end)
+    assert.truthy(word, "word highlight on the added line")
+    assert.are.equal(" edited", rows[add_row + 1]:sub(word[3] + 1, word[4].end_col))
+    assert.truthy(find(add_row, function(d)
+      return d.line_hl_group == "WatchtowerDiffAdd"
+    end))
+    -- Context lines keep their code colors: no line highlight at all
+    assert.is_nil(find(ctx_row, function(d)
+      return d.line_hl_group ~= nil
+    end))
+
+    local function gutter(row)
+      local m = find(row, function(d)
+        return d.virt_text_pos == "inline"
+      end)
+      return m and vim.trim(m[4].virt_text[1][1])
+    end
+    assert.are.equal("19", gutter(ctx_row))
+    assert.are.equal("20", gutter(del_row))
+    assert.are.equal("20", gutter(add_row))
+
+    local function gutter_hl(row)
+      local hl = find(row, function(d)
+        return d.virt_text_pos == "inline"
+      end)[4].virt_text[1][2]
+      -- A single group comes back as a string, a combined one as a list
+      return type(hl) == "table" and hl[1] or hl
+    end
+    assert.are.equal("WatchtowerDiffGutter", gutter_hl(ctx_row))
+    assert.are.equal("WatchtowerDiffDeleteSign", gutter_hl(del_row))
+    assert.are.equal("WatchtowerDiffAddSign", gutter_hl(add_row))
+  end)
+
+  describe("code colors", function()
+    local ns, rows
+
+    local function groups(row, col)
+      local out = {}
+      for _, m in ipairs(vim.api.nvim_buf_get_extmarks(state.diff_buf, ns, { row, 0 }, { row, -1 }, { details = true })) do
+        local d = m[4]
+        if d.hl_group and m[3] <= col and col < (d.end_col or 0) then
+          table.insert(out, d.hl_group)
+        end
+      end
+      return out
+    end
+
+    local function has_syntax(row, col)
+      return vim.iter(groups(row, col)):any(function(g)
+        return g:sub(1, 1) == "@"
+      end)
+    end
+
+    local function show_code()
+      write(repo .. "/code.lua", { "local before = 1", "local same = true", "return before" })
+      sh(repo, "git add code.lua && git commit -q -m code")
+      write(repo .. "/code.lua", { 'local after = "text"', "local same = true", "return after" })
+      wait_for(function()
+        return tree.line_of("code.lua") ~= nil
+      end, "code.lua to appear")
+      move_tree_to("code.lua")
+      ns = vim.api.nvim_get_namespaces().watchtower_diff
+      rows = diff_lines()
+    end
+
+    it("keeps syntax on added lines, flat text on removed lines and dims unchanged lines", function()
+      show_code()
+      local del_row = vim.fn.index(rows, "-local before = 1")
+      local add_row = vim.fn.index(rows, '+local after = "text"')
+      local ctx_row = vim.fn.index(rows, " local same = true")
+
+      -- col 1 is the first character after the marker
+      assert.truthy(vim.tbl_contains(groups(add_row, 15), "@string.lua"), vim.inspect(groups(add_row, 15)))
+      assert.truthy(vim.tbl_contains(groups(add_row, 0), "WatchtowerDiffAddSign"))
+
+      assert.truthy(vim.tbl_contains(groups(del_row, 1), "WatchtowerDiffDeleteText"))
+      assert.is_false(has_syntax(del_row, 1), "keyword on the removed line has no syntax color")
+      assert.truthy(vim.tbl_contains(groups(del_row, 0), "WatchtowerDiffDeleteSign"))
+
+      assert.truthy(vim.tbl_contains(groups(ctx_row, 1), "WatchtowerDiffContext"))
+      assert.is_false(has_syntax(ctx_row, 1), "keyword on the unchanged line has no syntax color")
+    end)
+
+    it("keeps syntax on unchanged lines with diff.context = syntax", function()
+      require("watchtower.config").options.diff.context = "syntax"
+      show_code()
+      local ctx_row = vim.fn.index(rows, " local same = true")
+      assert.truthy(vim.tbl_contains(groups(ctx_row, 1), "@keyword.lua"), vim.inspect(groups(ctx_row, 1)))
+      assert.falsy(vim.tbl_contains(groups(ctx_row, 1), "WatchtowerDiffContext"))
+    end)
+  end)
+
+  it("uses Claude Code's diff colors for the current background", function()
+    -- OptionSet is not triggered during startup, which is when plenary runs specs, so fire it
+    -- the way a real :set background= would
+    local function set_background(value)
+      vim.o.background = value
+      vim.api.nvim_exec_autocmds("OptionSet", { pattern = "background" })
+    end
+    set_background("light")
+    assert.are.equal(tonumber("dcffdc", 16), vim.api.nvim_get_hl(0, { name = "WatchtowerDiffAdd" }).bg)
+    assert.are.equal(tonumber("ffc7c7", 16), vim.api.nvim_get_hl(0, { name = "WatchtowerDiffDeleteWord" }).bg)
+    assert.are.equal(tonumber("333333", 16), vim.api.nvim_get_hl(0, { name = "WatchtowerDiffDeleteText" }).fg)
+    set_background("dark")
+    assert.are.equal(tonumber("022800", 16), vim.api.nvim_get_hl(0, { name = "WatchtowerDiffAdd" }).bg)
+    assert.are.equal(tonumber("5c0200", 16), vim.api.nvim_get_hl(0, { name = "WatchtowerDiffDeleteWord" }).bg)
+    assert.are.equal(tonumber("f8f8f2", 16), vim.api.nvim_get_hl(0, { name = "WatchtowerDiffDeleteText" }).fg)
+    set_background("light")
+  end)
+
+  it("gives windows split off the diff or tree an empty buffer", function()
+    vim.api.nvim_set_current_win(state.diff_win)
+    vim.cmd("split")
+    local from_diff = vim.api.nvim_get_current_win()
+    vim.api.nvim_set_current_win(state.tree_win)
+    vim.cmd("vsplit")
+    local from_tree = vim.api.nvim_get_current_win()
+
+    for _, win in ipairs({ from_diff, from_tree }) do
+      wait_for(function()
+        local buf = vim.api.nvim_win_get_buf(win)
+        return buf ~= state.diff_buf and buf ~= state.tree_buf
+      end, "split to get its own buffer")
+      local buf = vim.api.nvim_win_get_buf(win)
+      assert.are.equal("", vim.api.nvim_buf_get_name(buf))
+      assert.are.same({ "" }, vim.api.nvim_buf_get_lines(buf, 0, -1, false))
+    end
+    assert.are.equal(state.diff_buf, vim.api.nvim_win_get_buf(state.diff_win))
+    assert.are.equal(state.tree_buf, vim.api.nvim_win_get_buf(state.tree_win))
+  end)
+
   it("opens in place when configured with mode = replace", function()
     require("watchtower.config").options.open_file.mode = "replace"
     move_tree_to("new/fresh.txt")
