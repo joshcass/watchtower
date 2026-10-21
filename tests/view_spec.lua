@@ -310,7 +310,29 @@ describe("watchtower view", function()
     set_background("light")
   end)
 
-  it("gives windows split off the diff or tree an empty buffer", function()
+  it("shows the most recently used file in a window split off the diff", function()
+    move_tree_to("lib/deep/kept.lua")
+    -- kept.lua is opened first so it has the lower buffer number; only recency can pick it
+    diff.open_file(repo .. "/lib/deep/kept.lua", 1, 0)
+    local kept = vim.api.nvim_get_current_buf()
+    diff.open_file(repo .. "/new/fresh.txt", 1, 0)
+    -- lastused has one-second resolution
+    vim.wait(1100, function()
+      return false
+    end)
+    vim.cmd("buffer " .. kept)
+
+    vim.api.nvim_set_current_win(state.diff_win)
+    vim.cmd("split")
+    local win = vim.api.nvim_get_current_win()
+    wait_for(function()
+      return vim.api.nvim_win_get_buf(win) ~= state.diff_buf
+    end, "split to get its own buffer")
+    assert.are.equal(kept, vim.api.nvim_win_get_buf(win))
+    assert.are.equal(state.diff_buf, vim.api.nvim_win_get_buf(state.diff_win))
+  end)
+
+  it("gives windows split off the diff or tree an empty buffer when no files are open", function()
     vim.api.nvim_set_current_win(state.diff_win)
     vim.cmd("split")
     local from_diff = vim.api.nvim_get_current_win()
