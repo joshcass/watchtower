@@ -26,7 +26,7 @@ Requires Neovim >= 0.10 and git.
 
 ```lua
 {
-  dir = "~/Documents/watchtower-mode", -- or "<user>/<repo>" once published
+  "joshcass/watchtower",
   lazy = false,
   opts = {
     open_on_startup = true, -- open right away when nvim starts (no file args) inside a git repo
