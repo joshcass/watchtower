@@ -58,7 +58,7 @@ Defaults:
   open_file = {
     mode = "split",       -- "split" | "replace" (open in the diff window)
     direction = "away",   -- "away" (vertical split on the far side of the diff from the tree) | "above" | "below"
-    reuse_window = true,  -- later opens reuse the window from the first one
+    reuse_window = true,  -- open in the most recently used away window instead of a new split each time
   },
   watch = { enabled = true, interval_ms = 1000 },
   claudecode = true,
@@ -78,6 +78,12 @@ Defaults:
 ```
 
 Set any keymap to `false` to disable it.
+
+### The view's own space
+
+The tree and diff windows only ever show the tree and diff. Anything else opened in them is moved out to an "away" window (a normal window outside the view), at the same cursor position: a file picked from a picker while the tree is focused, `:e`, `:b`, and so on. The tree and diff buffers are put back.
+
+Files from `<CR>`/`o` and those redirected files go to the away window you used most recently. If you split an away window and move into the new split, that split becomes the target. With `open_file.reuse_window = false` each one gets a new split on the far side of the diff instead. `open_file.mode = "replace"` is the exception: the diff window is then meant to show files, so it is left alone.
 
 ### Diff colors
 

@@ -22,6 +22,19 @@ local function set_win_opts(win, opts)
   end
 end
 
+local DIFF_WIN_OPTS = { number = false, relativenumber = false, wrap = false, cursorline = true, foldenable = false }
+local TREE_WIN_OPTS = {
+  number = false,
+  relativenumber = false,
+  signcolumn = "no",
+  foldcolumn = "0",
+  wrap = false,
+  cursorline = true,
+  winfixwidth = true,
+  spell = false,
+  list = false,
+}
+
 local function stat_sig(path)
   local st = uv.fs_stat(path)
   if not st then
@@ -152,7 +165,7 @@ local function ensure_diff_win()
   state.diff_win = vim.api.nvim_get_current_win()
   vim.api.nvim_win_set_buf(state.diff_win, state.diff_buf)
   vim.api.nvim_win_set_width(state.tree_win, config.options.tree.width)
-  set_win_opts(state.diff_win, { number = false, relativenumber = false, wrap = false, cursorline = true, foldenable = false })
+  set_win_opts(state.diff_win, DIFF_WIN_OPTS)
   if vim.api.nvim_win_is_valid(current) then
     vim.api.nvim_set_current_win(current)
   end
@@ -498,6 +511,46 @@ local function set_autocmds()
       vim.schedule(M.pin_layout)
     end,
   })
+  -- The tree and diff are their own space: anything else opened in them (a picker run while
+  -- they are focused, :e, :b, ...) is moved out to an away window and the view buffer put back
+  vim.api.nvim_create_autocmd("BufWinEnter", {
+    group = augroup,
+    callback = function(ev)
+      local win = vim.api.nvim_get_current_win()
+      if not state.is_open() or (win ~= state.tree_win and win ~= state.diff_win) then
+        return
+      end
+      if ev.buf == state.tree_buf or ev.buf == state.diff_buf then
+        return
+      end
+      if win == state.diff_win and config.options.open_file.mode == "replace" then
+        return
+      end
+      -- Scheduled so whatever opened the buffer (e.g. a picker jumping to a line) has finished
+      vim.schedule(function()
+        if not state.win_valid(win) or vim.api.nvim_win_get_buf(win) ~= ev.buf then
+          return
+        end
+        local cursor = vim.api.nvim_win_get_cursor(win)
+        local is_tree = win == state.tree_win
+        vim.api.nvim_win_set_buf(win, is_tree and state.tree_buf or state.diff_buf)
+        set_win_opts(win, is_tree and TREE_WIN_OPTS or DIFF_WIN_OPTS)
+        local away = diff.show_away(ev.buf)
+        pcall(vim.api.nvim_win_set_cursor, away, cursor)
+      end)
+    end,
+  })
+  -- Remember the away window last used, so later opens go there (a split the user makes and
+  -- moves into becomes the new target)
+  vim.api.nvim_create_autocmd("WinEnter", {
+    group = augroup,
+    callback = function()
+      local win = vim.api.nvim_get_current_win()
+      if state.is_open() and diff.is_away(win) and vim.bo[vim.api.nvim_win_get_buf(win)].buftype == "" then
+        state.file_win = win
+      end
+    end,
+  })
   -- :split / <C-w>v from the tree or diff would show a second copy of that view buffer;
   -- show the most recently used file instead, else an existing [No Name] buffer, else a new one
   vim.api.nvim_create_autocmd("WinNew", {
@@ -584,22 +637,12 @@ function M.open(opts)
   end
   state.diff_win = vim.api.nvim_get_current_win()
   vim.api.nvim_win_set_buf(state.diff_win, state.diff_buf)
-  set_win_opts(state.diff_win, { number = false, relativenumber = false, wrap = false, cursorline = true, foldenable = false })
+  set_win_opts(state.diff_win, DIFF_WIN_OPTS)
 
   vim.cmd((config.tree_on_right() and "botright" or "topleft") .. " vertical " .. config.options.tree.width .. "split")
   state.tree_win = vim.api.nvim_get_current_win()
   vim.api.nvim_win_set_buf(state.tree_win, state.tree_buf)
-  set_win_opts(state.tree_win, {
-    number = false,
-    relativenumber = false,
-    signcolumn = "no",
-    foldcolumn = "0",
-    wrap = false,
-    cursorline = true,
-    winfixwidth = true,
-    spell = false,
-    list = false,
-  })
+  set_win_opts(state.tree_win, TREE_WIN_OPTS)
 
   -- Drop the [No Name] buffer the view replaced so it does not linger in the buffer list
   if

@@ -176,11 +176,6 @@ function M.jump_hunk(dir)
   end
 end
 
-local split_mods = {
-  above = "leftabove",
-  below = "rightbelow",
-}
-
 ---Opens the file backing the diff line under the cursor.
 function M.open_at_cursor()
   local file = state.selected
@@ -204,36 +199,48 @@ function M.open_at_cursor()
   M.open_file(state.abs_path(file), lnum, col)
 end
 
----@param path string absolute path
-function M.open_file(path, lnum, col)
+---Whether `win` is an ordinary window in the view's tab outside the tree and diff.
+function M.is_away(win)
+  return state.win_valid(win)
+    and win ~= state.diff_win
+    and win ~= state.tree_win
+    and vim.api.nvim_win_get_tabpage(win) == state.tab
+    and vim.api.nvim_win_get_config(win).relative == ""
+end
+
+---Shows `buf` outside the view and focuses it: in the most recently used away window when
+---`reuse_window` is on, otherwise in a new split on the far side of the diff from the tree.
+---With mode = "replace" it goes in the diff window instead.
+---@return integer win
+function M.show_away(buf)
   local opts = config.options.open_file
-  local target
-
-  if opts.mode == "replace" then
-    target = state.diff_win
-  elseif opts.reuse_window and state.win_valid(state.file_win) and state.file_win ~= state.diff_win then
-    target = state.file_win
-  end
-
-  local escaped = vim.fn.fnameescape(path)
-  if target and state.win_valid(target) then
-    vim.api.nvim_set_current_win(target)
-    vim.cmd("edit " .. escaped)
+  local win
+  if opts.mode == "replace" and state.win_valid(state.diff_win) then
+    win = state.diff_win
+    vim.api.nvim_win_set_buf(win, buf)
+  elseif opts.reuse_window and M.is_away(state.file_win) then
+    win = state.file_win
+    vim.api.nvim_win_set_buf(win, buf)
   else
-    local mods = split_mods[opts.direction]
-      or (config.tree_on_right() and "leftabove vertical" or "rightbelow vertical")
-    if state.win_valid(state.diff_win) then
-      vim.api.nvim_set_current_win(state.diff_win)
-    end
-    vim.cmd(mods .. " split " .. escaped)
+    local split = (opts.direction == "above" or opts.direction == "below") and opts.direction
+      or (config.tree_on_right() and "left" or "right")
+    local anchor = state.win_valid(state.diff_win) and state.diff_win or 0
+    -- Created with the buffer already in it, so the window never shows a copy of the diff
+    win = vim.api.nvim_open_win(buf, false, { split = split, win = anchor })
   end
-
-  local win = vim.api.nvim_get_current_win()
+  vim.api.nvim_set_current_win(win)
   if opts.mode ~= "replace" then
     state.file_win = win
   end
+  return win
+end
 
-  local line_count = vim.api.nvim_buf_line_count(0)
+---@param path string absolute path
+function M.open_file(path, lnum, col)
+  local buf = vim.fn.bufadd(path)
+  vim.bo[buf].buflisted = true
+  local win = M.show_away(buf)
+  local line_count = vim.api.nvim_buf_line_count(buf)
   pcall(vim.api.nvim_win_set_cursor, win, { math.min(lnum, line_count), col })
   vim.cmd("normal! zz")
 end

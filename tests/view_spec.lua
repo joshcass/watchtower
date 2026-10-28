@@ -382,6 +382,87 @@ describe("watchtower view", function()
     assert.are.equal(state.tree_buf, vim.api.nvim_win_get_buf(state.tree_win))
   end)
 
+  describe("keeping the view windows to themselves", function()
+    local function away_wins()
+      return vim.tbl_filter(function(win)
+        return win ~= state.tree_win and win ~= state.diff_win and vim.api.nvim_win_get_config(win).relative == ""
+      end, vim.api.nvim_tabpage_list_wins(state.tab))
+    end
+
+    -- What a picker does: open the file in the current window, then jump to a line
+    local function pick(win, path, lnum)
+      vim.api.nvim_set_current_win(win)
+      vim.cmd("edit " .. vim.fn.fnameescape(path))
+      vim.api.nvim_win_set_cursor(0, { lnum, 0 })
+    end
+
+    local function wait_restored()
+      wait_for(function()
+        return vim.api.nvim_win_get_buf(state.tree_win) == state.tree_buf
+          and vim.api.nvim_win_get_buf(state.diff_win) == state.diff_buf
+          and #away_wins() > 0
+      end, "view buffers to be restored")
+    end
+
+    it("moves a file opened in the tree out to an away window at the picked line", function()
+      pick(state.tree_win, repo .. "/lib/deep/kept.lua", 12)
+      wait_restored()
+
+      local away = away_wins()
+      assert.are.equal(1, #away)
+      assert.are.equal(repo .. "/lib/deep/kept.lua", vim.api.nvim_buf_get_name(vim.api.nvim_win_get_buf(away[1])))
+      assert.are.equal(away[1], vim.api.nvim_get_current_win())
+      assert.are.equal(12, vim.api.nvim_win_get_cursor(away[1])[1])
+      -- The tree window keeps its own look
+      assert.is_false(vim.wo[state.tree_win].number)
+      -- tree | diff | away
+      assert.is_true(vim.api.nvim_win_get_position(away[1])[2] > vim.api.nvim_win_get_position(state.diff_win)[2])
+    end)
+
+    it("moves a buffer switched to in the diff window out as well", function()
+      pick(state.diff_win, repo .. "/clean.lua", 1)
+      wait_restored()
+      assert.are.equal(repo .. "/clean.lua", vim.api.nvim_buf_get_name(vim.api.nvim_win_get_buf(away_wins()[1])))
+    end)
+
+    it("reuses the away window for later opens", function()
+      pick(state.tree_win, repo .. "/lib/deep/kept.lua", 1)
+      wait_restored()
+      local first = away_wins()[1]
+
+      pick(state.tree_win, repo .. "/clean.lua", 1)
+      wait_for(function()
+        return vim.api.nvim_buf_get_name(vim.api.nvim_win_get_buf(first)) == repo .. "/clean.lua"
+      end, "second file in the same away window")
+      assert.are.equal(1, #away_wins())
+    end)
+
+    it("opens a new away window each time with reuse_window = false", function()
+      require("watchtower.config").options.open_file.reuse_window = false
+      pick(state.tree_win, repo .. "/lib/deep/kept.lua", 1)
+      wait_restored()
+      pick(state.tree_win, repo .. "/clean.lua", 1)
+      wait_for(function()
+        return #away_wins() == 2
+      end, "a second away window")
+    end)
+
+    it("targets the away window the user split off and moved into", function()
+      pick(state.tree_win, repo .. "/lib/deep/kept.lua", 1)
+      wait_restored()
+      local original = away_wins()[1]
+      vim.api.nvim_set_current_win(original)
+      vim.cmd("split")
+      local split = vim.api.nvim_get_current_win()
+
+      pick(state.tree_win, repo .. "/clean.lua", 1)
+      wait_for(function()
+        return vim.api.nvim_buf_get_name(vim.api.nvim_win_get_buf(split)) == repo .. "/clean.lua"
+      end, "file in the split the user made")
+      assert.are.equal(repo .. "/lib/deep/kept.lua", vim.api.nvim_buf_get_name(vim.api.nvim_win_get_buf(original)))
+    end)
+  end)
+
   it("opens in place when configured with mode = replace", function()
     require("watchtower.config").options.open_file.mode = "replace"
     move_tree_to("new/fresh.txt")

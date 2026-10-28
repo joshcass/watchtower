@@ -3,7 +3,7 @@ local M = {}
 ---@class WatchtowerOpenFileConfig
 ---@field mode "split"|"replace" "split" opens the file next to the diff window, "replace" opens it in the diff window
 ---@field direction "away"|"above"|"below" "away" splits vertically on the side of the diff away from the tree
----@field reuse_window boolean Reuse the window from the previous open instead of splitting again
+---@field reuse_window boolean Open files in the most recently used window outside the view instead of a new split each time
 
 ---@class WatchtowerConfig
 M.defaults = {
