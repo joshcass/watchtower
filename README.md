@@ -1,4 +1,4 @@
-<p align="center"><img src="assets/watchtower-logo.png" alt="watchtower.nvim"></p>
+<p align="center"><img src="assets/watchtower-logo.png" alt="watchtower.nvim" width="500"></p>
 
 A git-diff-centric view for watching an AI agent edit your repo.
 
