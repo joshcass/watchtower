@@ -62,7 +62,10 @@ Defaults:
   },
   watch = { enabled = true, interval_ms = 1000 },
   claudecode = true,
-  diff = { context = "dim" }, -- unchanged lines: "dim" | "syntax"
+  diff = {
+    context = "dim",      -- unchanged lines: "dim" | "syntax"
+    wrap = true,          -- wrap long lines in the diff window
+  },
   highlights = {},       -- overrides, e.g. { WatchtowerDiffAdd = { bg = "#c7e1cb" } }
   keymaps = {
     tree = { select = "<CR>", open_file = "o", focus_diff = "l", collapse = "h", refresh = "R", close = "q" },

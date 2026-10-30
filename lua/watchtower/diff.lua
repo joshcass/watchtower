@@ -208,6 +208,33 @@ function M.is_away(win)
     and vim.api.nvim_win_get_config(win).relative == ""
 end
 
+---Whether files can be opened in `win`: an away window showing an ordinary buffer. Terminals
+---(e.g. the Claude Code window) and windows locked to their buffer are left alone. Checked when
+---a file is opened, since a terminal window can start out holding a plain buffer.
+function M.is_file_win(win)
+  if not M.is_away(win) then
+    return false
+  end
+  local buf = vim.api.nvim_win_get_buf(win)
+  return vim.bo[buf].buftype == "" and not vim.wo[win].winfixbuf
+end
+
+---The usable away window whose buffer was used most recently, for when the remembered one
+---cannot take files (e.g. it turned out to be a terminal).
+---@return integer|nil
+local function fallback_file_win()
+  local best, best_used
+  for _, win in ipairs(vim.api.nvim_tabpage_list_wins(state.tab)) do
+    if M.is_file_win(win) then
+      local used = vim.fn.getbufinfo(vim.api.nvim_win_get_buf(win))[1].lastused
+      if not best or used > best_used then
+        best, best_used = win, used
+      end
+    end
+  end
+  return best
+end
+
 ---Shows `buf` outside the view and focuses it: in the most recently used away window when
 ---`reuse_window` is on, otherwise in a new split on the far side of the diff from the tree.
 ---With mode = "replace" it goes in the diff window instead.
@@ -215,11 +242,12 @@ end
 function M.show_away(buf)
   local opts = config.options.open_file
   local win
+  local reuse = opts.reuse_window and (M.is_file_win(state.file_win) and state.file_win or fallback_file_win())
   if opts.mode == "replace" and state.win_valid(state.diff_win) then
     win = state.diff_win
     vim.api.nvim_win_set_buf(win, buf)
-  elseif opts.reuse_window and M.is_away(state.file_win) then
-    win = state.file_win
+  elseif reuse then
+    win = reuse
     vim.api.nvim_win_set_buf(win, buf)
   else
     local split = (opts.direction == "above" or opts.direction == "below") and opts.direction

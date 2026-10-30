@@ -22,7 +22,15 @@ local function set_win_opts(win, opts)
   end
 end
 
-local DIFF_WIN_OPTS = { number = false, relativenumber = false, wrap = false, cursorline = true, foldenable = false }
+local function diff_win_opts()
+  return {
+    number = false,
+    relativenumber = false,
+    wrap = config.options.diff.wrap,
+    cursorline = true,
+    foldenable = false,
+  }
+end
 local TREE_WIN_OPTS = {
   number = false,
   relativenumber = false,
@@ -165,7 +173,7 @@ local function ensure_diff_win()
   state.diff_win = vim.api.nvim_get_current_win()
   vim.api.nvim_win_set_buf(state.diff_win, state.diff_buf)
   vim.api.nvim_win_set_width(state.tree_win, config.options.tree.width)
-  set_win_opts(state.diff_win, DIFF_WIN_OPTS)
+  set_win_opts(state.diff_win, diff_win_opts())
   if vim.api.nvim_win_is_valid(current) then
     vim.api.nvim_set_current_win(current)
   end
@@ -534,7 +542,7 @@ local function set_autocmds()
         local cursor = vim.api.nvim_win_get_cursor(win)
         local is_tree = win == state.tree_win
         vim.api.nvim_win_set_buf(win, is_tree and state.tree_buf or state.diff_buf)
-        set_win_opts(win, is_tree and TREE_WIN_OPTS or DIFF_WIN_OPTS)
+        set_win_opts(win, is_tree and TREE_WIN_OPTS or diff_win_opts())
         local away = diff.show_away(ev.buf)
         pcall(vim.api.nvim_win_set_cursor, away, cursor)
       end)
@@ -546,7 +554,7 @@ local function set_autocmds()
     group = augroup,
     callback = function()
       local win = vim.api.nvim_get_current_win()
-      if state.is_open() and diff.is_away(win) and vim.bo[vim.api.nvim_win_get_buf(win)].buftype == "" then
+      if state.is_open() and diff.is_file_win(win) then
         state.file_win = win
       end
     end,
@@ -637,7 +645,7 @@ function M.open(opts)
   end
   state.diff_win = vim.api.nvim_get_current_win()
   vim.api.nvim_win_set_buf(state.diff_win, state.diff_buf)
-  set_win_opts(state.diff_win, DIFF_WIN_OPTS)
+  set_win_opts(state.diff_win, diff_win_opts())
 
   vim.cmd((config.tree_on_right() and "botright" or "topleft") .. " vertical " .. config.options.tree.width .. "split")
   state.tree_win = vim.api.nvim_get_current_win()

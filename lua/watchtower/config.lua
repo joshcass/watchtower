@@ -38,6 +38,8 @@ M.defaults = {
   diff = {
     -- Unchanged lines: "dim" fades them toward the background, "syntax" keeps their code colors
     context = "dim",
+    -- Wrap long lines in the diff window
+    wrap = true,
   },
   -- Highlight overrides applied after the built-in ones, e.g.
   -- { WatchtowerDiffAdd = { bg = "#c7e1cb" }, WatchtowerDiffDeleteWord = { bg = "#b3001f", fg = "#ffffff" } }

@@ -447,6 +447,27 @@ describe("watchtower view", function()
       end, "a second away window")
     end)
 
+    it("never opens files in a terminal window, even one entered before it became a terminal", function()
+      pick(state.tree_win, repo .. "/lib/deep/kept.lua", 1)
+      wait_restored()
+      local file_win = away_wins()[1]
+
+      -- Like snacks opening the Claude Code window: the window is entered while it still holds
+      -- a plain buffer, and only then becomes a terminal
+      vim.api.nvim_set_current_win(file_win)
+      vim.cmd("rightbelow vnew")
+      local term_win = vim.api.nvim_get_current_win()
+      vim.fn.jobstart({ "sh", "-c", "sleep 10" }, { term = true })
+      local term_buf = vim.api.nvim_win_get_buf(term_win)
+      assert.are.equal("terminal", vim.bo[term_buf].buftype)
+
+      pick(state.tree_win, repo .. "/clean.lua", 1)
+      wait_for(function()
+        return vim.api.nvim_buf_get_name(vim.api.nvim_win_get_buf(file_win)) == repo .. "/clean.lua"
+      end, "file in the existing file window")
+      assert.are.equal(term_buf, vim.api.nvim_win_get_buf(term_win))
+    end)
+
     it("targets the away window the user split off and moved into", function()
       pick(state.tree_win, repo .. "/lib/deep/kept.lua", 1)
       wait_restored()
@@ -461,6 +482,11 @@ describe("watchtower view", function()
       end, "file in the split the user made")
       assert.are.equal(repo .. "/lib/deep/kept.lua", vim.api.nvim_buf_get_name(vim.api.nvim_win_get_buf(original)))
     end)
+  end)
+
+  it("wraps long lines in the diff window by default", function()
+    assert.is_true(vim.wo[state.diff_win].wrap)
+    assert.is_false(vim.wo[state.tree_win].wrap)
   end)
 
   it("opens in place when configured with mode = replace", function()
