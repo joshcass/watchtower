@@ -161,6 +161,26 @@ function M.setup(opts)
     setup_open_on_file(group)
   end
 
+  if config.options.open_on_startup or config.options.open_on_file then
+    -- Sessions do not save the tree/diff windows, so a session saved with only the view open
+    -- restores nothing and leaves the dashboard up (and snacks' project picker then skips its
+    -- file picker because a session did load). Open the view in that case.
+    vim.api.nvim_create_autocmd("SessionLoadPost", {
+      group = group,
+      callback = function()
+        vim.schedule(function()
+          local view = require("watchtower.view")
+          if require("watchtower.state").is_open() or not view.tab_is_empty() then
+            return
+          end
+          if require("watchtower.git").find_root(vim.fn.getcwd()) then
+            M.open({ current_tab = true })
+          end
+        end)
+      end,
+    })
+  end
+
   if config.options.open_on_startup then
     local function maybe_open()
       -- An empty tab (or a dashboard) also rules out text piped in on stdin. StdinReadPre

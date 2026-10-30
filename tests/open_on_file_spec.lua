@@ -90,6 +90,28 @@ describe("open_on_file", function()
     assert.is_false(state.is_open())
   end)
 
+  describe("after a session load that restores no windows", function()
+    local function load_session(dir)
+      local file = vim.fn.tempname() .. ".vim"
+      -- What persistence leaves when only the view was open: a cd and no windows
+      vim.fn.writefile({ "cd " .. vim.fn.fnameescape(dir), "doautoall SessionLoadPost" }, file)
+      vim.cmd("source " .. vim.fn.fnameescape(file))
+      vim.fn.delete(file)
+    end
+
+    it("opens the view when the session's directory is a git repo", function()
+      load_session(repo)
+      wait_for(state.is_open, "view to open")
+      assert.are.equal(repo, state.root)
+    end)
+
+    it("leaves things alone outside a git repo", function()
+      load_session(outside)
+      settle()
+      assert.is_false(state.is_open())
+    end)
+  end)
+
   it("ignores commit messages", function()
     vim.fn.writefile({ "" }, repo .. "/.git/COMMIT_EDITMSG")
     vim.cmd("edit " .. vim.fn.fnameescape(repo .. "/.git/COMMIT_EDITMSG"))
