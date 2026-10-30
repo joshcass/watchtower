@@ -389,15 +389,14 @@ local function focus_diff()
   vim.api.nvim_set_current_win(state.diff_win)
 end
 
-local function set_keymaps()
-  local km = config.options.keymaps
-  local function map(buf, lhs, fn, desc)
-    if lhs and lhs ~= "" then
-      vim.keymap.set("n", lhs, fn, { buffer = buf, nowait = true, silent = true, desc = "Watchtower: " .. desc })
-    end
+local function map(buf, lhs, fn, desc)
+  if lhs and lhs ~= "" then
+    vim.keymap.set("n", lhs, fn, { buffer = buf, nowait = true, silent = true, desc = "Watchtower: " .. desc })
   end
+end
 
-  local tb = state.tree_buf
+local function tree_keymaps(tb)
+  local km = config.options.keymaps
   map(tb, km.tree.select, function()
     local entry = tree_entry()
     if not entry then
@@ -455,8 +454,10 @@ local function set_keymaps()
     M.refresh()
   end, "refresh")
   map(tb, km.tree.close, M.close, "close")
+end
 
-  local db = state.diff_buf
+local function diff_keymaps(db)
+  local km = config.options.keymaps
   map(db, km.diff.open_file, diff.open_at_cursor, "open file at line")
   map(db, km.diff.next_hunk, function()
     diff.jump_hunk(1)
@@ -478,19 +479,112 @@ local function set_keymaps()
   map(db, km.diff.close, M.close, "close")
 end
 
-local function set_autocmds()
+local exiting = false
+
+---Whether a view buffer still exists with its contents (a :bdelete unloads it).
+local function buf_alive(buf)
+  return buf ~= nil and vim.api.nvim_buf_is_valid(buf) and vim.api.nvim_buf_is_loaded(buf)
+end
+
+---Called when something other than the view itself removes a view buffer or window.
+local function on_view_damaged()
+  vim.schedule(function()
+    if not state.is_open() or exiting then
+      return
+    end
+    if config.options.protect_view then
+      M.repair()
+    else
+      M.close()
+    end
+  end)
+end
+
+local function watch_buf(buf)
+  vim.api.nvim_create_autocmd({ "BufUnload", "BufDelete", "BufWipeout" }, {
+    group = augroup,
+    buffer = buf,
+    callback = on_view_damaged,
+  })
+end
+
+local function new_tree_buf()
+  local buf = create_buf("watchtower://tree", "watchtower_tree")
+  tree_keymaps(buf)
   vim.api.nvim_create_autocmd("CursorMoved", {
     group = augroup,
-    buffer = state.tree_buf,
+    buffer = buf,
     callback = function()
       bridge.attach()
       select_from_tree_cursor()
     end,
   })
+  watch_buf(buf)
+  return buf
+end
+
+local function new_diff_buf()
+  local buf = create_buf("watchtower://diff", "watchtower_diff")
+  diff_keymaps(buf)
   vim.api.nvim_create_autocmd({ "BufEnter", "CursorMoved" }, {
     group = augroup,
-    buffer = state.diff_buf,
+    buffer = buf,
     callback = bridge.attach,
+  })
+  watch_buf(buf)
+  return buf
+end
+
+---Restores whatever was removed from the view from outside (a deleted tree/diff buffer, a closed
+---tree/diff window), so only the view's own close or toggle can take it down.
+function M.repair()
+  if not state.is_open() or exiting or vim.api.nvim_get_current_tabpage() ~= state.tab then
+    return
+  end
+
+  if not buf_alive(state.tree_buf) then
+    -- The old buffer still holds the watchtower://tree name until it is wiped
+    if state.tree_buf and vim.api.nvim_buf_is_valid(state.tree_buf) then
+      pcall(vim.api.nvim_buf_delete, state.tree_buf, { force = true })
+    end
+    state.tree_buf = new_tree_buf()
+  end
+  local diff_rebuilt = false
+  if not buf_alive(state.diff_buf) then
+    if state.diff_buf and vim.api.nvim_buf_is_valid(state.diff_buf) then
+      pcall(vim.api.nvim_buf_delete, state.diff_buf, { force = true })
+    end
+    state.diff_buf = new_diff_buf()
+    diff_rebuilt = true
+  end
+
+  if not state.win_valid(state.tree_win) or vim.api.nvim_win_get_tabpage(state.tree_win) ~= state.tab then
+    vim.cmd((config.tree_on_right() and "botright" or "topleft") .. " vertical " .. config.options.tree.width .. "split")
+    state.tree_win = vim.api.nvim_get_current_win()
+  end
+  if vim.api.nvim_win_get_buf(state.tree_win) ~= state.tree_buf then
+    vim.api.nvim_win_set_buf(state.tree_win, state.tree_buf)
+  end
+  set_win_opts(state.tree_win, TREE_WIN_OPTS)
+  vim.api.nvim_win_set_width(state.tree_win, config.options.tree.width)
+
+  ensure_diff_win()
+  set_win_opts(state.diff_win, diff_win_opts())
+
+  tree.render()
+  if diff_rebuilt then
+    diff.render(nil, nil, "Loading…")
+    M.select(state.selected)
+  end
+  M.pin_layout()
+end
+
+local function set_autocmds()
+  vim.api.nvim_create_autocmd({ "ExitPre", "VimLeavePre" }, {
+    group = augroup,
+    callback = function()
+      exiting = true
+    end,
   })
   vim.api.nvim_create_autocmd({ "BufWritePost", "FocusGained", "TabEnter" }, {
     group = augroup,
@@ -500,16 +594,34 @@ local function set_autocmds()
       end
     end,
   })
-  vim.api.nvim_create_autocmd({ "TabClosed", "WinClosed" }, {
+  vim.api.nvim_create_autocmd("TabClosed", {
     group = augroup,
-    callback = function(ev)
+    callback = function()
       vim.schedule(function()
-        if not state.is_open() or (ev.event == "WinClosed" and not state.win_valid(state.tree_win)) then
+        if not state.is_open() then
           M.teardown()
-        else
-          M.pin_layout()
         end
       end)
+    end,
+  })
+  vim.api.nvim_create_autocmd("WinClosed", {
+    group = augroup,
+    callback = function(ev)
+      local closed = tonumber(ev.match)
+      if closed == state.tree_win or closed == state.diff_win then
+        on_view_damaged()
+      else
+        vim.schedule(M.pin_layout)
+      end
+    end,
+  })
+  -- A repair skipped because another tab was current happens on return
+  vim.api.nvim_create_autocmd("TabEnter", {
+    group = augroup,
+    callback = function()
+      if state.is_open() and vim.api.nvim_get_current_tabpage() == state.tab then
+        vim.schedule(M.repair)
+      end
     end,
   })
   -- WinResized also fires for <C-w>H/J/K/L moves and splits, after the layout has settled
@@ -539,8 +651,13 @@ local function set_autocmds()
         if not state.win_valid(win) or vim.api.nvim_win_get_buf(win) ~= ev.buf then
           return
         end
-        local cursor = vim.api.nvim_win_get_cursor(win)
         local is_tree = win == state.tree_win
+        -- Being deleted (e.g. :bdelete swaps in another buffer first): rebuild instead of moving
+        -- the stand-in buffer out to an away window
+        if not buf_alive(is_tree and state.tree_buf or state.diff_buf) then
+          return on_view_damaged()
+        end
+        local cursor = vim.api.nvim_win_get_cursor(win)
         vim.api.nvim_win_set_buf(win, is_tree and state.tree_buf or state.diff_buf)
         set_win_opts(win, is_tree and TREE_WIN_OPTS or diff_win_opts())
         local away = diff.show_away(ev.buf)
@@ -633,8 +750,9 @@ function M.open(opts)
   end
   state.tab = vim.api.nvim_get_current_tabpage()
 
-  state.tree_buf = create_buf("watchtower://tree", "watchtower_tree")
-  state.diff_buf = create_buf("watchtower://diff", "watchtower_diff")
+  exiting = false
+  state.tree_buf = new_tree_buf()
+  state.diff_buf = new_diff_buf()
 
   local open_opts = config.options.open_file
   if file_win and open_opts.mode ~= "replace" then
@@ -664,7 +782,6 @@ function M.open(opts)
     pcall(vim.api.nvim_buf_delete, replaced_buf, {})
   end
 
-  set_keymaps()
   set_autocmds()
   tree.render()
   diff.render(nil, nil, "Loading…")

@@ -49,6 +49,7 @@ Defaults:
   open_on_startup = false,
   open_on_file = false,
   pin_diff = true,       -- keep the diff window directly next to the tree
+  protect_view = true,   -- rebuild the tree/diff if closed or deleted from outside; false closes both
   base = "HEAD",
   tree = {
     position = "left",    -- "left" | "right": screen edge the tree sits on
@@ -83,6 +84,8 @@ Defaults:
 Set any keymap to `false` to disable it.
 
 ### The view's own space
+
+The view is opened and closed with `:Watchtower` (or your mapping for it) and `q`. Closing the tree or diff window any other way (`:q`, `<C-w>c`, `:only` from another window) or deleting their buffers (`:bdelete`, a bufdelete mapping) rebuilds the missing piece. With `protect_view = false`, doing that closes the whole view instead, so you're never left with half of it.
 
 The tree and diff windows only ever show the tree and diff. Anything else opened in them is moved out to an "away" window (a normal window outside the view), at the same cursor position: a file picked from a picker while the tree is focused, `:e`, `:b`, and so on. The tree and diff buffers are put back.
 

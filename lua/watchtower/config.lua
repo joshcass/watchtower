@@ -14,6 +14,9 @@ M.defaults = {
   open_on_file = false,
   -- Keep the diff window directly next to the tree, moving it back if other windows displace it
   pin_diff = true,
+  -- Only the view's own close/toggle can take it down: a tree or diff window or buffer removed
+  -- any other way (:q, <C-w>c, :bdelete, ...) is rebuilt. false closes the whole view instead.
+  protect_view = true,
   -- Ref the working tree is compared against
   base = "HEAD",
   tree = {

@@ -484,6 +484,88 @@ describe("watchtower view", function()
     end)
   end)
 
+  describe("protecting the view", function()
+    local function intact()
+      return state.is_open()
+        and state.win_valid(state.tree_win)
+        and state.win_valid(state.diff_win)
+        and vim.api.nvim_win_get_buf(state.tree_win) == state.tree_buf
+        and vim.api.nvim_win_get_buf(state.diff_win) == state.diff_buf
+        and vim.api.nvim_buf_is_loaded(state.tree_buf)
+        and vim.api.nvim_buf_is_loaded(state.diff_buf)
+    end
+
+    local function wait_repaired(old)
+      wait_for(function()
+        return intact() and (old.tree_win ~= state.tree_win or old.diff_win ~= state.diff_win
+          or old.tree_buf ~= state.tree_buf or old.diff_buf ~= state.diff_buf)
+      end, "view to be rebuilt")
+      -- Rebuilt pieces are fully working: tree listed, diff showing the selected file
+      wait_for(function()
+        return tree.line_of("lib/deep/kept.lua") ~= nil and vim.tbl_contains(diff_lines(), "+line 20 edited")
+      end, "rebuilt view to show content")
+      assert.are.equal(0, vim.api.nvim_win_get_position(state.tree_win)[2])
+      assert.are.equal(35, vim.api.nvim_win_get_width(state.tree_win))
+    end
+
+    local function snapshot()
+      return { tree_win = state.tree_win, diff_win = state.diff_win, tree_buf = state.tree_buf, diff_buf = state.diff_buf }
+    end
+
+    before_each(function()
+      move_tree_to("lib/deep/kept.lua")
+    end)
+
+    it("rebuilds a closed tree window", function()
+      local old = snapshot()
+      vim.api.nvim_win_close(state.tree_win, true)
+      wait_repaired(old)
+    end)
+
+    it("rebuilds a closed diff window", function()
+      local old = snapshot()
+      vim.api.nvim_win_close(state.diff_win, true)
+      wait_repaired(old)
+    end)
+
+    it("rebuilds a buffer removed with :bdelete", function()
+      local old = snapshot()
+      vim.cmd("bdelete! " .. state.tree_buf)
+      wait_repaired(old)
+      -- The rebuilt tree still drives the diff
+      move_tree_to("new/fresh.txt")
+    end)
+
+    it("rebuilds a buffer deleted the way bufdelete plugins do it", function()
+      local old = snapshot()
+      -- Swap another buffer into the window first, then delete the view buffer
+      local other = vim.api.nvim_create_buf(true, false)
+      vim.api.nvim_win_set_buf(state.diff_win, other)
+      vim.cmd("bdelete! " .. old.diff_buf)
+      wait_repaired(old)
+    end)
+
+    it("still closes for good with q", function()
+      vim.api.nvim_set_current_win(state.tree_win)
+      vim.api.nvim_feedkeys("q", "x", false)
+      vim.wait(200, function()
+        return false
+      end)
+      assert.is_false(state.is_open())
+    end)
+
+    it("closes the whole view instead with protect_view = false", function()
+      require("watchtower.config").options.protect_view = false
+      local tree_buf = state.tree_buf
+      vim.api.nvim_win_close(state.diff_win, true)
+      wait_for(function()
+        return not state.is_open()
+      end, "view to close")
+      -- The tree goes with it (its window may stay if it was the last one, as Neovim keeps one)
+      assert.is_false(vim.api.nvim_buf_is_valid(tree_buf))
+    end)
+  end)
+
   it("wraps long lines in the diff window by default", function()
     assert.is_true(vim.wo[state.diff_win].wrap)
     assert.is_false(vim.wo[state.tree_win].wrap)
