@@ -88,6 +88,28 @@ describe("watchtower view", function()
     assert.falsy(text:find("clean.lua", 1, true))
   end)
 
+  it("marks file status in the tree by color only", function()
+    local ns = vim.api.nvim_get_namespaces().watchtower_tree
+    local marks = vim.api.nvim_buf_get_extmarks(state.tree_buf, ns, 0, -1, { details = true })
+    local function name_hl(path)
+      local row = tree.line_of(path) - 1
+      local line = tree_lines()[row + 1]
+      local name_col = #line - #vim.fs.basename(path)
+      for _, m in ipairs(marks) do
+        if m[2] == row and m[3] == name_col then
+          return m[4].hl_group
+        end
+      end
+    end
+
+    for _, m in ipairs(marks) do
+      assert.is_nil(m[4].virt_text, "no status letters drawn")
+    end
+    assert.are.equal("WatchtowerChanged", name_hl("lib/deep/kept.lua"))
+    assert.are.equal("WatchtowerRemoved", name_hl("lib/deep/removed.lua"))
+    assert.are.equal("WatchtowerUntracked", name_hl("new/fresh.txt"))
+  end)
+
   it("shows the diff for the file under the tree cursor", function()
     move_tree_to("lib/deep/kept.lua")
     assert.truthy(vim.tbl_contains(diff_lines(), "+line 20 edited"), vim.inspect(diff_lines()))

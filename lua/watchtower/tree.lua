@@ -134,7 +134,6 @@ function M.render()
 
   local lines = { " " .. vim.fs.basename(state.root) .. "  " .. config.options.base }
   local marks = { { row = 0, col = 0, end_col = #lines[1], hl = "WatchtowerHeader" } }
-  local status_marks = {}
   state.tree_entries = {}
 
   if #entries == 0 then
@@ -160,7 +159,6 @@ function M.render()
     else
       local hl = status_hl[entry.file.status] or "WatchtowerChanged"
       table.insert(marks, { row = row, col = name_start, end_col = #line, hl = hl })
-      table.insert(status_marks, { row = row, text = entry.file.status, hl = hl })
     end
   end
 
@@ -171,9 +169,6 @@ function M.render()
   vim.api.nvim_buf_clear_namespace(buf, ns, 0, -1)
   for _, m in ipairs(marks) do
     vim.api.nvim_buf_set_extmark(buf, ns, m.row, m.col, { end_col = m.end_col, hl_group = m.hl })
-  end
-  for _, m in ipairs(status_marks) do
-    vim.api.nvim_buf_set_extmark(buf, ns, m.row, 0, { virt_text = { { m.text .. " ", m.hl } }, virt_text_pos = "right_align" })
   end
 
   if state.win_valid(state.tree_win) then

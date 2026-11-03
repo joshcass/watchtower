@@ -6,14 +6,14 @@ A git-diff-centric view for watching an AI agent edit your repo.
 ┌ tree ──────────────┬ diff ─────────────────────────────┐
 │  repo  HEAD        │  M  lib/deep/kept.lua             │
 │   lib/deep         │ @@ -17,7 +17,7 @@                 │
-│    kept.lua      M │  line 17                          │
-│    removed.lua   D │ -line 20                          │
+│    kept.lua        │  line 17                          │
+│    removed.lua     │ -line 20                          │
 │   new              │ +line 20 edited                   │
-│    fresh.txt     ? │  line 21                          │
+│    fresh.txt       │  line 21                          │
 └────────────────────┴───────────────────────────────────┘
 ```
 
-- The tree lists only files that differ from `HEAD` plus untracked files.
+- The tree lists only files that differ from `HEAD` plus untracked files, colored by status (changed, added/untracked, deleted, conflicted).
 - The diff pane follows the tree cursor.
 - `<CR>` in the diff opens the file at that line, in a split on the side away from the tree.
 - The diff window stays pinned next to the tree (`pin_diff`); other windows go beyond it.
