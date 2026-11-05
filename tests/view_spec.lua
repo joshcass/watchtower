@@ -490,6 +490,31 @@ describe("watchtower view", function()
       assert.are.equal(term_buf, vim.api.nvim_win_get_buf(term_win))
     end)
 
+    it("gives snacks pickers the diff as their target instead of an old terminal window", function()
+      local snacks_dir = vim.fn.stdpath("data") .. "/lazy/snacks.nvim"
+      if vim.fn.isdirectory(snacks_dir) == 0 then
+        return pending("snacks.nvim is not installed")
+      end
+      vim.opt.rtp:append(snacks_dir)
+
+      -- A terminal (like Claude Code's) opened first, then left alone while working in the view,
+      -- so it holds the least recently used buffer
+      vim.api.nvim_set_current_win(state.diff_win)
+      vim.cmd("rightbelow vnew")
+      local term_win = vim.api.nvim_get_current_win()
+      vim.fn.jobstart({ "sh", "-c", "sleep 10" }, { term = true })
+      -- lastused has one-second resolution
+      vim.wait(1100, function()
+        return false
+      end)
+      vim.api.nvim_set_current_win(state.diff_win)
+      vim.api.nvim_set_current_win(state.tree_win)
+
+      local main = require("snacks.picker.core.main").new():get()
+      assert.are_not.equal(term_win, main)
+      assert.are.equal(state.diff_win, main)
+    end)
+
     it("targets the away window the user split off and moved into", function()
       pick(state.tree_win, repo .. "/lib/deep/kept.lua", 1)
       wait_restored()
@@ -630,7 +655,12 @@ describe("watchtower view", function()
 
   it("reports the real file and line to claudecode.nvim", function()
     local broadcasts = {}
+    local updates = 0
     local sel = {
+      update_selection = function()
+        updates = updates + 1
+      end,
+      flush_visual_selection = function() end,
       state = { tracking_enabled = true },
       get_cursor_position = function()
         return { filePath = vim.api.nvim_buf_get_name(0) }
@@ -654,6 +684,14 @@ describe("watchtower view", function()
     local tree_pos = sel.get_cursor_position()
     assert.are.equal(repo .. "/lib/deep/kept.lua", tree_pos.filePath)
     assert.are.equal(19, tree_pos.selection.start.line)
+    sel.update_selection()
+    assert.are.equal(1, updates, "a file under the tree cursor is reported")
+
+    -- On the tree's header line there is nothing to report: the update is skipped rather than
+    -- letting claudecode report the watchtower://tree buffer
+    vim.api.nvim_win_set_cursor(state.tree_win, { 1, 0 })
+    sel.update_selection()
+    assert.are.equal(1, updates)
 
     vim.api.nvim_set_current_win(state.diff_win)
     local edited = vim.fn.index(diff_lines(), "+line 20 edited") + 1

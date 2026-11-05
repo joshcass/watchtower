@@ -170,6 +170,27 @@ function M.attach()
   end
   patched = true
 
+  -- With nothing real under the cursor (the tree's header, a diff with no file) claudecode would
+  -- fall back to the buffer's own name and Claude would show "In tree"/"In diff". Skip the update
+  -- instead, so Claude keeps the last real file.
+  local function nothing_to_report()
+    return current_view() ~= nil and cursor_selection() == nil
+  end
+  local update_selection = sel.update_selection
+  sel.update_selection = function(...)
+    if nothing_to_report() then
+      return
+    end
+    return update_selection(...)
+  end
+  local flush_visual_selection = sel.flush_visual_selection
+  sel.flush_visual_selection = function(...)
+    if nothing_to_report() then
+      return
+    end
+    return flush_visual_selection(...)
+  end
+
   local get_cursor_position = sel.get_cursor_position
   sel.get_cursor_position = function(...)
     return cursor_selection() or get_cursor_position(...)

@@ -511,6 +511,13 @@ end
 local function new_tree_buf()
   local buf = create_buf("watchtower://tree", "watchtower_tree")
   tree_keymaps(buf)
+  -- Hooked into claudecode on entering too, not only after the cursor moves, so its first update
+  -- after entering the tree already reports the real file
+  vim.api.nvim_create_autocmd("BufEnter", {
+    group = augroup,
+    buffer = buf,
+    callback = bridge.attach,
+  })
   vim.api.nvim_create_autocmd("CursorMoved", {
     group = augroup,
     buffer = buf,
@@ -525,6 +532,11 @@ end
 
 local function new_diff_buf()
   local buf = create_buf("watchtower://diff", "watchtower_diff")
+  -- snacks pickers open files in a "main" window that shows a file buffer. With only the
+  -- tree, the diff and a terminal (e.g. Claude Code) on screen there is none, and snacks falls
+  -- back to an arbitrary window, sometimes the terminal. Marking the diff as a valid target
+  -- keeps files there instead, from where the view moves them out to an away window.
+  vim.b[buf].snacks_main = true
   diff_keymaps(buf)
   vim.api.nvim_create_autocmd({ "BufEnter", "CursorMoved" }, {
     group = augroup,
